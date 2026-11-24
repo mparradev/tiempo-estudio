@@ -83,6 +83,9 @@ void main() {
     await tester.tap(find.byIcon(Icons.bar_chart_outlined));
     await tester.pumpAndSettle();
     expect(find.text('1 de 1 sesiones completadas'), findsOneWidget);
+    expect(find.byType(WeeklyBarChart), findsOneWidget);
+    await tester.scrollUntilVisible(find.byType(SubjectDonutChart), 150);
+    expect(find.byType(SubjectDonutChart), findsOneWidget);
     await tester.scrollUntilVisible(find.text('1 h · 100 %'), 150);
     expect(find.text('1 h · 100 %'), findsOneWidget);
   });

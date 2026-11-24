@@ -780,6 +780,15 @@ class _PlannerState extends State<Planner> {
           .where((s) => s.status == SessionStatus.completed),
     );
     final difference = minutes - previous;
+    final dailyMinutes = [
+      for (var day = 0; day < 7; day++)
+        total(
+          completed.where(
+            (session) =>
+                DateUtils.isSameDay(session.day, shiftDay(reportWeek, day)),
+          ),
+        ),
+    ];
     final breakdown =
         {
             for (final subject in subjects)
@@ -841,6 +850,8 @@ class _PlannerState extends State<Planner> {
       ),
       const SizedBox(height: 12),
       goalCard(reportWeek),
+      section('Actividad diaria'),
+      Panel(child: WeeklyBarChart(minutes: dailyMinutes)),
       section('Distribución por materia'),
       if (breakdown.isEmpty)
         const EmptyCard(
@@ -852,6 +863,17 @@ class _PlannerState extends State<Planner> {
         Panel(
           child: Column(
             children: [
+              SubjectDonutChart(
+                slices: [
+                  for (final entry in breakdown)
+                    ChartSlice(
+                      label: entry.key.name,
+                      value: entry.value,
+                      color: Color(entry.key.color),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 22),
               for (final entry in breakdown)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -1125,6 +1147,179 @@ class _SessionEditorState extends State<SessionEditor> {
       ),
     ),
   );
+}
+
+class WeeklyBarChart extends StatelessWidget {
+  const WeeklyBarChart({super.key, required this.minutes});
+
+  final List<int> minutes;
+
+  @override
+  Widget build(BuildContext context) {
+    final highest = minutes.fold(
+      0,
+      (maximum, value) => value > maximum ? value : maximum,
+    );
+    const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Minutos completados por día',
+          style: TextStyle(color: muted),
+        ),
+        const SizedBox(height: 18),
+        SizedBox(
+          height: 190,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (final (index, value) in minutes.indexed)
+                Expanded(
+                  child: Semantics(
+                    label: '${labels[index]}: ${durationLabel(value)}',
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            value == 0 ? '0' : durationLabel(value),
+                            maxLines: 1,
+                            style: const TextStyle(
+                              color: muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.bottomCenter,
+                              child: FractionallySizedBox(
+                                heightFactor: highest == 0
+                                    ? .02
+                                    : (value == 0 ? .02 : value / highest),
+                                widthFactor: .68,
+                                child: Container(
+                                  constraints: const BoxConstraints(
+                                    minHeight: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: value == 0
+                                        ? const Color(0xffeae9f2)
+                                        : purple,
+                                    borderRadius: const BorderRadius.vertical(
+                                      top: Radius.circular(9),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            labels[index],
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class ChartSlice {
+  const ChartSlice({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final int value;
+  final Color color;
+}
+
+class SubjectDonutChart extends StatelessWidget {
+  const SubjectDonutChart({super.key, required this.slices});
+
+  final List<ChartSlice> slices;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalMinutes = slices.fold(0, (sum, slice) => sum + slice.value);
+    final description = slices
+        .map(
+          (slice) =>
+              '${slice.label}: ${(slice.value * 100 / totalMinutes).round()} %',
+        )
+        .join(', ');
+
+    return Semantics(
+      label: 'Distribución por materia. $description',
+      child: SizedBox(
+        height: 190,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            CustomPaint(
+              size: const Size.square(180),
+              painter: DonutPainter(slices),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  durationLabel(totalMinutes),
+                  style: const TextStyle(
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Text('total', style: TextStyle(color: muted)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class DonutPainter extends CustomPainter {
+  const DonutPainter(this.slices);
+
+  final List<ChartSlice> slices;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final totalMinutes = slices.fold(0, (sum, slice) => sum + slice.value);
+    final bounds = Offset.zero & size;
+    var start = -1.5708;
+    const fullCircle = 6.283185307179586;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 26
+      ..strokeCap = StrokeCap.butt;
+
+    for (final slice in slices) {
+      final sweep = fullCircle * slice.value / totalMinutes;
+      paint.color = slice.color;
+      canvas.drawArc(bounds.deflate(18), start, sweep, false, paint);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(DonutPainter oldDelegate) => oldDelegate.slices != slices;
 }
 
 class Panel extends StatelessWidget {
